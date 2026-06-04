@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+*.pyc
+gosense-gpt-finetuned/
+gosense-gpt-final/
+*.pdf
+my_writing.txt
+.DS_Store
