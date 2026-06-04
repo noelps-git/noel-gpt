@@ -2,17 +2,17 @@ from flask import Flask, request, jsonify, render_template_string
 import torch
 import fitz
 import chromadb
+import requests
 from sentence_transformers import SentenceTransformer
-from transformers import AutoTokenizer, AutoModelForCausalLM
 
 app = Flask(__name__)
 
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+print(f"Using device: {device}")
+
+print("Loading embedding model...")
 embed_model = SentenceTransformer("all-MiniLM-L6-v2")
-tokenizer = AutoTokenizer.from_pretrained("./gosense-gpt-final")
-model = AutoModelForCausalLM.from_pretrained("./gosense-gpt-final")
-model = model.to(device)
-model.eval()
+print("Embedding model loaded.")
 
 client = chromadb.Client()
 collection = client.get_or_create_collection("gosense_knowledge")
@@ -48,33 +48,32 @@ def retrieve(query, n=2):
     )
     return results["documents"][0]
 
-def rag_generate(query, max_new_tokens=150, temperature=0.8):
+def rag_generate(query, temperature=0.8):
     context_chunks = retrieve(query)
-    context = "\n\n".join(context_chunks)[:800]
-    prompt = f"""Context:
+    context = "\n\n".join(context_chunks)[:1500]
+    prompt = f"""You are Noel Rajakumar PS, a fraud and security expert at GoSense AI in Chennai.
+You write in a calm, analytical, narrative style about fraud, security, and payment rails.
+
+Here is relevant context from your knowledge base:
 {context}
 
-Write about: {query}
----
-"""
-    inputs = tokenizer.encode(
-        prompt,
-        return_tensors="pt",
-        truncation=True,
-        max_length=800
-    ).to(device)
-    with torch.no_grad():
-        outputs = model.generate(
-            inputs,
-            max_new_tokens=150,
-            temperature=temperature,
-            do_sample=True,
-            top_p=0.92,
-            repetition_penalty=1.1,
-            pad_token_id=tokenizer.eos_token_id
-        )
-    full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return full_output[len(prompt):]
+Now write about: {query}
+
+Write in your voice — hook, tension, insight, closing question. Keep it focused and coherent."""
+
+    response = requests.post(
+        "http://localhost:11434/api/generate",
+        json={
+            "model": "llama3",
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": 1000,
+            }
+        }
+    )
+    return response.json()["response"]
 
 ingest_pdf("training data for posts.pdf")
 
